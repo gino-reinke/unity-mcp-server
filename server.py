@@ -58,7 +58,7 @@ if __name__ == "__main__":
         "--transport",
         choices=["stdio", "streamable-http", "sse"],
         default="stdio",
-        help="Transport to use. 'stdio' for Claude Desktop, 'streamable-http' for Claude Web (default: stdio)",
+        help="Transport to use. 'stdio' for Claude/ChatGPT Desktop, 'streamable-http' for Claude Web (default: stdio)",
     )
     parser.add_argument(
         "--host",

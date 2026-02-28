@@ -77,7 +77,8 @@ Then use the forwarded HTTPS URL (e.g. `https://abc123.ngrok-free.app/mcp`) when
 
 ## Claude Desktop MCP config example
 
-Add a server entry in your `claude_desktop_config.json`:
+Add a server entry in your `claude_desktop_config.json`
+(`%APPDATA%\Claude\claude_desktop_config.json` on Windows):
 
 ```json
 {
@@ -99,6 +100,38 @@ Add a server entry in your `claude_desktop_config.json`:
 ```
 
 Adjust paths to match your machine.
+
+## ChatGPT Desktop MCP config example
+
+The ChatGPT desktop app supports MCP via the same stdio transport.
+Create (or edit) the following file on Windows (ChatGPT is a Store app):
+
+```
+%LOCALAPPDATA%\Packages\OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0\LocalCache\Roaming\ChatGPT\mcp.json
+```
+
+```json
+{
+  "mcpServers": {
+    "unity-mcp-server": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "C:/Repos/unity-mcp-server/server.py"
+      ],
+      "env": {
+        "UNITY_PROJECTS_DIR": "C:/Users/your-user/Documents/Unity Projects",
+        "BRAVE_API_KEY": "your_brave_api_key_here"
+      }
+    }
+  }
+}
+```
+
+After saving, restart ChatGPT Desktop. The Unity tools will appear exactly as they do in Claude Desktop — type `@unity-mcp-server` or reference any tool by name in the chat.
+
+> **Note:** If ChatGPT Desktop stores its config in a different location on your machine, check **Settings → MCP** inside the app for the exact path.
 
 ## Claude Web (claude.ai) setup
 

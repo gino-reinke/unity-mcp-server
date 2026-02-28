@@ -27,17 +27,19 @@ class Config:
         self.learning_mode = False
 
     @staticmethod
-    def _claude_desktop_config_candidates():
-        """Return possible locations of claude_desktop_config.json."""
+    def _desktop_config_candidates():
+        """Return possible locations of AI desktop app MCP config files."""
         home = Path(os.path.expanduser("~"))
         appdata = Path(os.environ.get("APPDATA", home / "AppData" / "Roaming"))
         local_appdata = Path(
             os.environ.get("LOCALAPPDATA", home / "AppData" / "Local")
         )
+        # Allow explicit override for Claude Desktop config
         configured = os.environ.get("CLAUDE_DESKTOP_CONFIG_PATH")
         configured_path = [Path(configured)] if configured else []
         return [
             *configured_path,
+            # Claude Desktop (Windows store / portable)
             local_appdata
             / "Packages"
             / "Claude_pzs8sxrjxfjjc"
@@ -48,11 +50,25 @@ class Config:
             appdata / "Claude" / "claude_desktop_config.json",
             home / ".claude" / "claude_desktop_config.json",
             Path.cwd() / "claude_desktop_config.json",
+            # ChatGPT Desktop (Windows Store app)
+            local_appdata
+            / "Packages"
+            / "OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0"
+            / "LocalCache"
+            / "Roaming"
+            / "ChatGPT"
+            / "mcp.json",
+            # ChatGPT Desktop (non-Store / portable installs)
+            appdata / "ChatGPT" / "mcp.json",
+            local_appdata / "ChatGPT" / "mcp.json",
+            # macOS paths (on Windows these simply won't exist)
+            home / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json",
+            home / "Library" / "Application Support" / "ChatGPT" / "mcp.json",
         ]
 
     def _load_claude_desktop_env(self):
-        """Load env map from claude_desktop_config.json if available."""
-        for path in self._claude_desktop_config_candidates():
+        """Load env map from any supported desktop AI app MCP config file."""
+        for path in self._desktop_config_candidates():
             if not path.exists():
                 continue
             try:
