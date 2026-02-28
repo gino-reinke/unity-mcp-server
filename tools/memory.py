@@ -22,11 +22,28 @@ def register(mcp, config, storage_backend):
         category: str = "note",
         tags: str = "",
     ) -> str:
-        """Store a new memory about a Unity project.
+        """Store a new memory about a Unity project or general information.
         Categories: 'architecture', 'convention', 'bug', 'system', 'note'
         Tags: comma-separated strings, e.g. 'player,movement,physics'
         Use this to remember architecture decisions, naming conventions,
-        known bugs, which systems have been built, and project notes."""
+        known bugs, which systems have been built, and project notes.
+
+        Project assignment rules (follow in this exact order of priority):
+        1. If the user explicitly names a project in their message, use that exact project name.
+        2. If the memory is clearly about a specific project based on context, use that project name.
+        3. Use project="general" ONLY when the memory genuinely applies to multiple projects or
+           is not tied to any single project (e.g. broad game dev goals, general Unity tips,
+           cross-project conventions, personal workflow preferences).
+        4. If none of the above apply and you are unsure, DO NOT guess or default to "general" —
+           ask the user which project to store it under, then store it based on their answer.
+
+        Additional rules:
+        - Project names do NOT need to match folders in the Unity projects directory. A project
+          name can be any label the user uses — including courses, experiments, or ideas that
+          have no folder yet.
+        - Before storing, use recall_memories to check if this project already exists in the
+          database. If it does, use the exact same project name already stored to keep naming
+          consistent. Only introduce a new project name if no close match is found."""
         tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
         entry = MemoryEntry(
             id="",
