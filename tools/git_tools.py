@@ -13,7 +13,9 @@ def register(mcp, config):
     def _get_repo(project_name: str) -> Repo:
         """Get a git Repo object for a Unity project."""
         project_path = (projects_dir / project_name).resolve()
-        if not str(project_path).startswith(str(projects_dir)):
+        try:
+            project_path.relative_to(projects_dir.resolve())
+        except ValueError:
             raise ValueError("Access denied: path outside Unity projects directory")
         if not project_path.exists():
             raise FileNotFoundError(f"Project not found:{project_name}")
