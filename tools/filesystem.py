@@ -76,7 +76,7 @@ def _non_identity_quat(raw):
     return not (abs(x) < 0.0001 and abs(y) < 0.0001 and abs(z) < 0.0001 and abs(abs(w) - 1) < 0.0001)
 
 
-def _inspect_unity_content(content: str) -> str:
+def _inspect_unity_content(content: str, component_filter: str = "") -> str:
     """Parse Unity YAML and return a human-readable hierarchy."""
     splits = list(_DOC_RE.finditer(content))
     if not splits:
@@ -204,7 +204,37 @@ def _inspect_unity_content(content: str) -> str:
             root_fids.append(go_fid)
 
     total_comps = sum(len(go["comp_ids"]) for go in game_objects.values())
-    out = [f"GameObjects: {len(game_objects)}  |  Components: {total_comps}", ""]
+    header = f"GameObjects: {len(game_objects)}  |  Components: {total_comps}"
+
+    if component_filter:
+        filter_lower = component_filter.strip().lower()
+        matching = []
+        for go_fid, go in game_objects.items():
+            for comp_fid in go["comp_ids"]:
+                if comp_fid not in docs:
+                    continue
+                cid, _ = docs[comp_fid]
+                cname = UNITY_CLASS_IDS.get(cid, f"Component({cid})")
+                if filter_lower in cname.lower():
+                    matching.append(go_fid)
+                    break
+        if not matching:
+            return f"{header}\nNo GameObjects found with component matching '{component_filter}'."
+        out = [header, f"Filter: component='{component_filter}' — {len(matching)} match(es)", ""]
+        for go_fid in matching:
+            go = game_objects[go_fid]
+            active_str = "" if go["active"] else " [inactive]"
+            tag_str = f" | Tag: {go['tag']}" if go["tag"] not in ("Untagged", "") else ""
+            layer_str = f" | Layer: {go['layer']}" if go["layer"] != 0 else ""
+            out.append(f"{go['name']}{active_str}{tag_str}{layer_str}")
+            for comp_fid in go["comp_ids"]:
+                line = format_component(comp_fid)
+                if line:
+                    out.append(line)
+            out.append("")
+        return "\n".join(out).rstrip()
+
+    out = [header, ""]
     for i, go_fid in enumerate(root_fids):
         if i >= 100:
             out.append(f"... [{len(root_fids) - 100} more root objects not shown]")
@@ -213,6 +243,108 @@ def _inspect_unity_content(content: str) -> str:
         out.append("")
 
     return "\n".join(out).rstrip()
+
+
+def _inspect_asset_content(content: str) -> str:
+    """Parse a Unity .asset (ScriptableObject) file and return readable data."""
+    splits = list(_DOC_RE.finditer(content))
+    if not splits:
+        return "No Unity objects found."
+
+    out_parts = []
+    for i, m in enumerate(splits):
+        class_id = int(m.group(1))
+        start = m.end()
+        end = splits[i + 1].start() if i + 1 < len(splits) else len(content)
+        raw = content[start:end]
+
+        class_name = UNITY_CLASS_IDS.get(class_id, f"Object({class_id})")
+        obj_name = _re_str(raw, r'm_Name:\s*(.+)', f'<{class_name}>')
+
+        if class_id == 114:  # MonoBehaviour — used for ScriptableObjects
+            fields = {}
+            for line in raw.splitlines():
+                s = line.strip()
+                mm = re.match(r'^([a-zA-Z][a-zA-Z0-9_]*)\s*:\s*(.+)$', s)
+                if mm:
+                    k, v = mm.group(1), mm.group(2).strip()
+                    if (not k.startswith('m_') and v
+                            and not v.startswith('{')
+                            and not v.startswith('-')
+                            and not v.startswith('[')
+                            and k not in ('MonoBehaviour', 'serializedVersion')):
+                        fields[k] = v[:80]
+            lines = [f"ScriptableObject: {obj_name}"]
+            if fields:
+                lines.append("  Fields:")
+                for k, v in fields.items():
+                    lines.append(f"    {k}: {v}")
+            else:
+                lines.append("  (no user-defined serialized fields found)")
+            out_parts.append("\n".join(lines))
+        else:
+            out_parts.append(f"{class_name}: {obj_name}")
+
+    return "\n\n".join(out_parts) if out_parts else "No objects parsed."
+
+
+def _inspect_material_content(content: str) -> str:
+    """Parse a Unity .mat (Material) file and return readable property data."""
+    splits = list(_DOC_RE.finditer(content))
+    if not splits:
+        return "No Unity objects found."
+
+    for i, m in enumerate(splits):
+        class_id = int(m.group(1))
+        if class_id != 21:  # Material
+            continue
+        start = m.end()
+        end = splits[i + 1].start() if i + 1 < len(splits) else len(content)
+        raw = content[start:end]
+
+        mat_name = _re_str(raw, r'm_Name:\s*(.+)', '<unnamed>')
+        lines = [f"Material: {mat_name}"]
+
+        keywords = _re_str(raw, r'm_ShaderKeywords:\s*(.+)', '').strip()
+        if keywords:
+            lines.append(f"Shader Keywords: {keywords}")
+
+        render_queue = _re_str(raw, r'm_CustomRenderQueue:\s*(.+)', '').strip()
+        if render_queue and render_queue != '-1':
+            lines.append(f"Render Queue: {render_queue}")
+
+        saved = re.search(r'm_SavedProperties:(.*)', raw, re.DOTALL)
+        if saved:
+            props = saved.group(1)
+
+            tex_block = re.search(r'm_TexEnvs:(.*?)(?=m_Ints:|m_Floats:|m_Colors:|\Z)', props, re.DOTALL)
+            if tex_block:
+                tex_names = re.findall(r'^\s+- (\w+):', tex_block.group(1), re.MULTILINE)
+                if tex_names:
+                    lines.append(f"Texture slots: {', '.join(tex_names)}")
+
+            float_block = re.search(r'm_Floats:(.*?)(?=m_Colors:|\Z)', props, re.DOTALL)
+            if float_block:
+                floats = re.findall(r'- (\w+):\s*(-?[\d.eE+\-]+)', float_block.group(1))
+                if floats:
+                    lines.append("Floats:")
+                    for prop_name, val in floats[:15]:
+                        lines.append(f"  {prop_name}: {val}")
+
+            color_block = re.search(r'm_Colors:(.*)', props, re.DOTALL)
+            if color_block:
+                colors = re.findall(
+                    r'- (\w+):\s*\{r:\s*(-?[\d.]+),\s*g:\s*(-?[\d.]+),\s*b:\s*(-?[\d.]+),\s*a:\s*(-?[\d.]+)\}',
+                    color_block.group(1),
+                )
+                if colors:
+                    lines.append("Colors:")
+                    for prop_name, r, g, b, a in colors[:10]:
+                        lines.append(f"  {prop_name}: rgba({r}, {g}, {b}, {a})")
+
+        return "\n".join(lines)
+
+    return "No Material (class 21) found in file."
 
 
 def register(mcp, config):
@@ -471,9 +603,9 @@ def register(mcp, config):
                 break
         from datetime import datetime
         mod_time = datetime.fromtimestamp(stat.st_mtime).isoformat()
-        inspectable = ext in {'.unity', '.prefab'}
-        readable = ext not in {'.asset', '.mat'}
-        hint = "\nTip: Use inspect_unity_file to parse GameObjects and components." if inspectable else ""
+        inspectable = ext in {'.unity', '.prefab', '.asset', '.mat'}
+        readable = True
+        hint = "\nTip: Use inspect_unity_file to parse GameObjects, components, or material properties." if inspectable else ""
         return (
             f"File:{file_path}\n"
             f"Size:{stat.st_size / 1024:.1f}KB\n"
@@ -484,18 +616,31 @@ def register(mcp, config):
         )
 
     @mcp.tool()
-    def inspect_unity_file(file_path: str) -> str:
-        """Inspect a Unity .unity scene or .prefab file.
-        Parses the YAML structure and returns a readable hierarchy of GameObjects,
-        their components, and key properties (position, scale, MonoBehaviour fields).
-        Example: 'MyGame/Assets/Scenes/MainScene.unity'
-                 'MyGame/Assets/Prefabs/Player.prefab'"""
+    def inspect_unity_file(file_path: str, component_filter: str = "") -> str:
+        """Inspect a Unity scene, prefab, ScriptableObject asset, or material file.
+        Parses the YAML structure and returns a readable summary.
+
+        Supported types:
+          .unity  — Scene hierarchy with GameObjects and components
+          .prefab — Prefab hierarchy with GameObjects and components
+          .asset  — ScriptableObject with its serialized fields
+          .mat    — Material with shader keywords, textures, floats, and colors
+
+        Args:
+            file_path: Path relative to the Unity projects directory.
+                       E.g. 'MyGame/Assets/Scenes/Main.unity'
+                            'MyGame/Assets/Data/EnemyStats.asset'
+                            'MyGame/Assets/Materials/Player.mat'
+            component_filter: (.unity/.prefab only) Show only GameObjects whose
+                              component list contains this string.
+                              E.g. 'Rigidbody', 'Camera', 'MonoBehaviour', 'Light'
+        """
         full_path = _safe_resolve(str(projects_dir / file_path))
         if not full_path.exists():
             return f"File not found: {file_path}"
         ext = full_path.suffix.lower()
-        if ext not in {'.unity', '.prefab'}:
-            return f"Not a .unity scene or .prefab file: {file_path}"
+        if ext not in {'.unity', '.prefab', '.asset', '.mat'}:
+            return f"Unsupported type '{ext}'. Supported: .unity, .prefab, .asset, .mat"
         size_mb = full_path.stat().st_size / (1024 * 1024)
         if size_mb > 10:
             return f"File too large ({size_mb:.1f}MB). Only files under 10MB can be inspected."
@@ -503,6 +648,11 @@ def register(mcp, config):
             content = full_path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             return f"Cannot read file (encoding issue): {file_path}"
-        label = "Scene" if ext == ".unity" else "Prefab"
-        summary = _inspect_unity_content(content)
+        if ext == '.mat':
+            label, summary = "Material", _inspect_material_content(content)
+        elif ext == '.asset':
+            label, summary = "Asset", _inspect_asset_content(content)
+        else:
+            label = "Scene" if ext == ".unity" else "Prefab"
+            summary = _inspect_unity_content(content, component_filter)
         return f"{label}: {file_path}\n{'=' * 60}\n{summary}"
