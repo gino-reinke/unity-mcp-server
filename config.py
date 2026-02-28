@@ -20,6 +20,13 @@ class Config:
         self.brave_api_key = self._get_config_value("BRAVE_API_KEY", "")
         self.storage_backend = self._get_config_value("STORAGE_BACKEND", "sqlite")
 
+        # Ollama / local LLM settings
+        self.ollama_base_url = self._get_config_value(
+            "OLLAMA_BASE_URL", "http://localhost:11434"
+        )
+        self.ollama_model = self._get_config_value("OLLAMA_MODEL", "llama3.2")
+        self.local_ai_enabled = self._get_config_value("LOCAL_AI_ENABLED", "true").lower() not in ("false", "0", "no")
+
         self.data_dir = Path(__file__).parent / "data"
         self.data_dir.mkdir(exist_ok=True)
 

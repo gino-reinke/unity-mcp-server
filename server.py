@@ -12,7 +12,7 @@ load_dotenv()
 
 from config import Config
 from storage.sqlite_store import SQLiteStorage
-from tools import filesystem, git_tools, memory, search, tutor, unity_log
+from tools import filesystem, git_tools, llm_tools, memory, search, tutor, unity_log
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,6 +41,7 @@ search.register(mcp, config)
 memory.register(mcp, config, storage)
 tutor.register(mcp, config)
 unity_log.register(mcp, config)
+llm_tools.register(mcp, config)
 
 logger.info(
     f"Unity MCP Server ready - "
