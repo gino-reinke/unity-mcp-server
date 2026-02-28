@@ -43,6 +43,7 @@ The server reads configuration from:
 - `BRAVE_API_KEY` (optional): enables `brave_search` and `search_unity_docs`
 - `STORAGE_BACKEND` (optional): currently defaults to `sqlite`
 - `CLAUDE_DESKTOP_CONFIG_PATH` (optional): custom path to `claude_desktop_config.json`
+- `MCP_SECRET` (recommended when using HTTP transport): shared Bearer token that must be sent by the client — the server rejects any request that omits or mismatches it
 
 If `UNITY_PROJECTS_DIR` is not set, the server tries common Windows locations like:
 
@@ -52,11 +53,27 @@ If `UNITY_PROJECTS_DIR` is not set, the server tries common Windows locations li
 
 ## Run locally
 
+### stdio (Claude Desktop)
+
 ```bash
 uv run python server.py
 ```
 
-The server starts with `stdio` transport and registers all tools at startup.
+### HTTP / Claude Web
+
+```bash
+uv run python server.py --transport streamable-http --host 127.0.0.1 --port 8000
+```
+
+The server binds to `http://127.0.0.1:8000/mcp` by default.
+
+To expose it publicly (required for Claude Web), use a tunnelling tool such as [ngrok](https://ngrok.com/):
+
+```bash
+ngrok http 8000
+```
+
+Then use the forwarded HTTPS URL (e.g. `https://abc123.ngrok-free.app/mcp`) when adding the integration in Claude.
 
 ## Claude Desktop MCP config example
 
@@ -82,6 +99,47 @@ Add a server entry in your `claude_desktop_config.json`:
 ```
 
 Adjust paths to match your machine.
+
+## Claude Web (claude.ai) setup
+
+1. Generate a strong random secret:
+
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+
+   Save the output — you'll need it in steps 2 and 5.
+
+2. Create and configure a `.env` file:
+
+  ```bash
+  cp .env.example .env
+  ```
+
+  Then edit `.env` and set:
+  - `MCP_SECRET`: a strong random secret (use the output from step 1)
+  - `UNITY_PROJECTS_DIR`: absolute path to your Unity Projects folder
+
+
+3. Start the server:
+
+   ```bash
+   uv run python server.py --transport streamable-http --port 8000
+   ```
+
+4. Expose the server publicly with ngrok (or any reverse proxy / cloud deployment):
+
+   ```bash
+   ngrok http 8000
+   ```
+
+5. In Claude.ai go to **Settings → Integrations → Add custom integration** and fill in:
+   - **URL:** `https://<your-ngrok-subdomain>.ngrok-free.app/mcp`
+   - **Authentication:** Bearer token → paste your secret from step 1
+
+6. Save and start chatting — Claude will automatically discover and use the Unity tools.
+
+> **Note:** For permanent deployments, run the server on a VPS or cloud host instead of using ngrok. Make sure the `/mcp` endpoint is reachable over HTTPS.
 
 ## Available tools
 
