@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \":*)",
+      "Bash(/c/Repos/unity-mcp-server/.venv/Scripts/python -c \":*)"
+    ]
+  }
+}

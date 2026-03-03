@@ -158,3 +158,27 @@ def register(mcp, config, storage_backend):
                 tag_str = f" [{', '.join(m.tags)}]" if m.tags else ""
                 lines.append(f"  -{m.title}{tag_str}  (ID:{m.id[:8]}...)")
         return "\n".join(lines)
+
+    @mcp.tool()
+    async def list_all_memories() -> str:
+        """Return every stored memory across all projects, sorted by most recently updated.
+        Use this at the start of a session to get full visibility into all stored context.
+        Returns id, project, category, title, tags, content preview, and updated_at for each entry."""
+        results = await _storage.search(limit=1000)
+        if not results:
+            return "No memories stored yet."
+        lines = [f"All memories ({len(results)} total):", ""]
+        by_project = {}
+        for m in results:
+            by_project.setdefault(m.project, []).append(m)
+        for project, entries in sorted(by_project.items()):
+            lines.append(f"\n[PROJECT: {project}] ({len(entries)} entries)")
+            for m in entries:
+                tag_str = f" [{', '.join(m.tags)}]" if m.tags else ""
+                lines.append(
+                    f"  ID: {m.id}\n"
+                    f"    Category: {m.category} | Updated: {m.updated_at}\n"
+                    f"    Title: {m.title}{tag_str}\n"
+                    f"    Content: {m.content[:200]}{'...' if len(m.content) > 200 else ''}\n"
+                )
+        return "\n".join(lines)
