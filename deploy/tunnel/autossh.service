@@ -1,0 +1,58 @@
+# autossh.service — persistent SSH reverse tunnel for Unity MCP Server
+#
+# For Linux or WSL users. autossh automatically reconnects the tunnel if it drops.
+#
+# SETUP:
+#   1. Install autossh:
+#        sudo apt-get install autossh          # Debian/Ubuntu
+#        brew install autossh                  # macOS
+#
+#   2. Replace YOUR_VPS_IP below with your Oracle Cloud VPS public IP address.
+#      Or use your DuckDNS domain instead of the IP.
+#
+#   3. Ensure SSH key auth works (no password prompt):
+#        ssh-copy-id ubuntu@YOUR_VPS_IP
+#
+#   4. Copy this file to the systemd user directory:
+#        mkdir -p ~/.config/systemd/user
+#        cp deploy/tunnel/autossh.service ~/.config/systemd/user/unity-mcp-tunnel.service
+#
+#   5. Enable and start the tunnel:
+#        systemctl --user enable unity-mcp-tunnel.service
+#        systemctl --user start  unity-mcp-tunnel.service
+#
+#   6. Verify the tunnel is up on the VPS:
+#        ssh ubuntu@YOUR_VPS_IP "ss -tlnp | grep 9000"
+#        # Should show: LISTEN 0 ... 127.0.0.1:9000
+#
+# HOW IT WORKS:
+#   autossh opens an SSH connection to YOUR_VPS_IP and instructs the VPS to listen
+#   on port 9000 (loopback only). Connections to VPS:9000 are forwarded back through
+#   the tunnel to localhost:8000 on your local machine where the MCP server runs.
+#
+#   Traffic flow:
+#     Claude.ai → HTTPS → VPS Caddy (:443) → localhost:9000 → tunnel → local MCP (:8000)
+
+[Unit]
+Description=Reverse SSH tunnel to VPS for Unity MCP Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Replace YOUR_VPS_IP with your Oracle Cloud VPS public IP or DuckDNS domain.
+# -R 9000:localhost:8000  means: on the VPS, forward port 9000 to local port 8000
+# -M 0                    disables autossh's built-in monitoring (use SSH keepalives instead)
+ExecStart=/usr/bin/autossh -M 0 \
+    -o "ServerAliveInterval=30" \
+    -o "ServerAliveCountMax=3" \
+    -o "ExitOnForwardFailure=yes" \
+    -o "StrictHostKeyChecking=accept-new" \
+    -N \
+    -R 9000:localhost:8000 \
+    ubuntu@YOUR_VPS_IP
+
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=default.target

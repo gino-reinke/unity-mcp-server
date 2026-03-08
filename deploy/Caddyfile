@@ -1,0 +1,17 @@
+# Caddyfile — Caddy reverse proxy config for Unity MCP Server on Oracle Cloud
+#
+# How it works:
+#   Claude.ai → HTTPS (port 443) → Caddy → localhost:9000 → SSH reverse tunnel → Local server:8000
+#
+# Replace YOUR_DOMAIN with your DuckDNS (or other) domain before copying to the VPS.
+# Caddy automatically obtains and renews a Let's Encrypt TLS certificate.
+#
+# On the VPS, copy this file to /etc/caddy/Caddyfile and restart Caddy:
+#   sudo cp Caddyfile /etc/caddy/Caddyfile
+#   sudo systemctl restart caddy
+
+YOUR_DOMAIN.duckdns.org {
+    # Forward to port 9000 — the VPS-side endpoint of the SSH reverse tunnel.
+    # The local MCP server (port 8000) is reached through that tunnel.
+    reverse_proxy localhost:9000
+}
