@@ -51,7 +51,6 @@ logger.info(
 )
 
 if __name__ == "__main__":
-    import hmac
     import os
 
     parser = argparse.ArgumentParser(description="Unity MCP Server")
@@ -72,67 +71,50 @@ if __name__ == "__main__":
         default=8000,
         help="Port to bind when using HTTP transport (default: 8000)",
     )
+    parser.add_argument(
+        "--public-url",
+        default=None,
+        help=(
+            "Public base URL for OAuth issuer (e.g. https://abc123.ngrok-free.app). "
+            "Falls back to PUBLIC_URL env var, then http://{host}:{port}."
+        ),
+    )
     args = parser.parse_args()
 
     if args.transport in ("streamable-http", "sse"):
-        secret = os.environ.get("MCP_SECRET", "").strip()
+        from mcp.server.auth.provider import ProviderTokenVerifier
+        from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
+        from mcp.server.transport_security import TransportSecuritySettings
 
-        if not secret:
-            logger.warning(
-                "MCP_SECRET is not set — the HTTP server is unauthenticated. "
-                "Set MCP_SECRET=<strong-random-token> before exposing publicly."
-            )
+        from auth_provider import SimpleOAuthProvider
 
-        # Build the Starlette app manually so we can wrap it with auth middleware.
-        os.environ.setdefault("FASTMCP_HOST", args.host)
-        os.environ.setdefault("FASTMCP_PORT", str(args.port))
+        public_url = (
+            args.public_url
+            or os.environ.get("PUBLIC_URL", "").strip()
+            or f"http://{args.host}:{args.port}"
+        )
 
-        base_app = mcp.streamable_http_app()
+        provider = SimpleOAuthProvider()
+        auth_settings = AuthSettings(
+            issuer_url=public_url,
+            resource_server_url=public_url,
+            client_registration_options=ClientRegistrationOptions(enabled=True),
+        )
 
-        if secret:
-            from starlette.types import ASGIApp, Receive, Scope, Send
+        # Mutate the module-level mcp object (tools already registered) before
+        # streamable_http_app() is called — that method reads these lazily.
+        mcp._auth_server_provider = provider
+        mcp._token_verifier = ProviderTokenVerifier(provider)
+        mcp.settings.auth = auth_settings
+        mcp.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        )
 
-            class _BearerAuthMiddleware:
-                """Lightweight ASGI middleware that enforces a shared Bearer token.
-
-                Using a raw ASGI middleware (not BaseHTTPMiddleware) avoids
-                buffering issues with streaming / SSE responses.
-                """
-
-                def __init__(self, app: ASGIApp, token: str) -> None:
-                    self._app = app
-                    self._token = token
-
-                async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-                    if scope["type"] == "http":
-                        headers = {k.lower(): v for k, v in scope.get("headers", [])}
-                        auth = headers.get(b"authorization", b"").decode()
-                        provided = auth[7:] if auth.startswith("Bearer ") else ""
-                        if not hmac.compare_digest(provided, self._token):
-                            body = b'{"error":"Unauthorized"}'
-                            await send(
-                                {
-                                    "type": "http.response.start",
-                                    "status": 401,
-                                    "headers": [
-                                        (b"content-type", b"application/json"),
-                                        (b"content-length", str(len(body)).encode()),
-                                        (b"www-authenticate", b"Bearer"),
-                                    ],
-                                }
-                            )
-                            await send({"type": "http.response.body", "body": body})
-                            return
-                    await self._app(scope, receive, send)
-
-            asgi_app = _BearerAuthMiddleware(base_app, secret)
-            logger.info(f"Starting HTTP server on {args.host}:{args.port} ({args.transport}) — bearer auth enabled")
-        else:
-            asgi_app = base_app
-            logger.info(f"Starting HTTP server on {args.host}:{args.port} ({args.transport}) — no auth")
+        logger.info(f"Starting HTTP server on {args.host}:{args.port} ({args.transport}) — OAuth enabled")
+        logger.info(f"OAuth issuer: {public_url}")
 
         import uvicorn
 
-        uvicorn.run(asgi_app, host=args.host, port=args.port, log_level="info")
+        uvicorn.run(mcp.streamable_http_app(), host=args.host, port=args.port, log_level="info")
     else:
         mcp.run(transport=args.transport)
